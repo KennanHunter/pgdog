@@ -12,7 +12,7 @@ use crate::{
 use parking_lot::RwLock;
 use pgdog_config::PreparedStatements as PreparedStatementsLevel;
 
-use super::Error;
+use super::{Error, Oids};
 use super::{
     protocol::{ProtocolState, state::Action},
     state::ExecutionCode,
@@ -53,17 +53,20 @@ pub struct PreparedStatements {
     capacity: usize,
     memory_used: usize,
     level: PreparedStatementsLevel,
+    #[allow(unused)]
+    oids: Arc<Oids>,
 }
 
+#[cfg(test)]
 impl Default for PreparedStatements {
     fn default() -> Self {
-        Self::new()
+        Self::new(Default::default())
     }
 }
 
 impl PreparedStatements {
     /// New server prepared statements.
-    pub fn new() -> Self {
+    pub(crate) fn new(oids: Arc<Oids>) -> Self {
         Self {
             global_cache: frontend::PreparedStatements::global(),
             local_cache: LruCache::unbounded(),
@@ -73,6 +76,7 @@ impl PreparedStatements {
             capacity: usize::MAX,
             memory_used: 0,
             level: PreparedStatementsLevel::default(),
+            oids,
         }
     }
 
@@ -473,14 +477,14 @@ mod test {
 
     /// Build a PreparedStatements instance configured for ExtendedAnonymous mode.
     fn new_extended_anonymous() -> PreparedStatements {
-        let mut ps = PreparedStatements::new();
+        let mut ps = PreparedStatements::default();
         ps.set_prepared_statements_level(PreparedStatementsLevel::ExtendedAnonymous);
         ps
     }
 
     /// Build a PreparedStatements instance configured for Extended (default) mode.
     fn new_extended() -> PreparedStatements {
-        let mut ps = PreparedStatements::new();
+        let mut ps = PreparedStatements::default();
         ps.set_prepared_statements_level(PreparedStatementsLevel::Extended);
         ps
     }

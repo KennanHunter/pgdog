@@ -18,7 +18,7 @@ use crate::{
     net::Parameters,
 };
 
-use super::{Error, Guard, Pool, PoolConfig, Request};
+use super::{Error, Guard, Oids, Pool, PoolConfig, Request};
 
 pub mod ban;
 pub mod monitor;
@@ -90,11 +90,12 @@ pub struct LoadBalancer {
 
 impl LoadBalancer {
     /// Create new replicas pools.
-    pub fn new(
+    pub(crate) fn new(
         primary: &Option<Pool>,
         addrs: &[PoolConfig],
         lb_strategy: LoadBalancingStrategy,
         rw_split: ReadWriteSplit,
+        oids: Arc<Oids>,
     ) -> LoadBalancer {
         let checkout_timeout = primary
             .as_ref()
@@ -110,7 +111,12 @@ impl LoadBalancer {
 
         let mut targets: Vec<_> = addrs
             .iter()
-            .map(|config| Target::new(Pool::new(config), config.address.configured_role))
+            .map(|config| {
+                Target::new(
+                    Pool::new(config, Arc::clone(&oids)),
+                    config.address.configured_role,
+                )
+            })
             .collect();
 
         let primary_target = primary

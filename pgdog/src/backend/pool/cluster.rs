@@ -24,7 +24,7 @@ use crate::{
 };
 
 use super::{
-    Address, Config, Error, Guard, MirrorStats, Request, Shard, ShardConfig,
+    Address, CanonicalOids, Config, Error, Guard, MirrorStats, Request, Shard, ShardConfig,
     cluster_launch::Readiness,
 };
 use crate::config::LoadBalancingStrategy;
@@ -78,6 +78,7 @@ pub struct Cluster {
     resharding_replication_retry_min_delay: Duration,
     regex_parser: RegexParser,
     identity: Option<String>,
+    pub(super) canonical_oids: Arc<CanonicalOids>,
 }
 
 /// Sharding configuration from the cluster.
@@ -289,6 +290,7 @@ impl Cluster {
             user: user.to_owned(),
             database: name.to_owned(),
         });
+        let canonical_oids = Default::default();
 
         Self {
             identifier: identifier.clone(),
@@ -306,6 +308,7 @@ impl Cluster {
                         lsn_check_interval,
                         pub_sub_enabled,
                         schema_cache: schema_cache.clone(),
+                        canonical_oids: Arc::clone(&canonical_oids),
                     })
                 })
                 .collect(),
@@ -345,6 +348,7 @@ impl Cluster {
             ),
             regex_parser: RegexParser::new(regex_parser_limit, query_parser),
             identity: identity.clone(),
+            canonical_oids,
         }
     }
 
@@ -399,7 +403,7 @@ impl Cluster {
     }
 
     /// Get all shards.
-    pub fn shards(&self) -> &[Shard] {
+    pub(crate) fn shards(&self) -> &[Shard] {
         &self.shards
     }
 

@@ -31,6 +31,7 @@ impl Command for Probe {
                 &Address::try_from(self.url.clone()).map_err(|_| Error::InvalidAddress)?,
                 ServerOptions::default(),
                 ConnectReason::Probe,
+                Default::default(),
             ),
         )
         .await?

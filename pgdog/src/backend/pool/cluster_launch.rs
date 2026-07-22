@@ -3,6 +3,7 @@
 //! Launching and shutting down the connection pools, and gating
 //! traffic until boot-time maintenance has completed.
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
@@ -119,10 +120,47 @@ impl Cluster {
     /// until success or shutdown.
     fn launch_schema_sync(&self) {
         if !self.load_schema() {
+            self.canonical_oids.skip_load();
             for shard in self.shards() {
                 shard.schema_not_needed();
             }
             return;
+        }
+
+        // For now we treat shard 0 as the canonical OID source
+        if let Some(shard) = self.shards().first() {
+            let canonical_oids = Arc::clone(&self.canonical_oids);
+            let shard = shard.clone();
+            tasks::spawn("load canonical oids", async move {
+                // FIXME: This shutdown signal/retry if error logic seems like
+                // it might be worth abstracting
+                let shutdown = tasks::shutdown_signal();
+
+                loop {
+                    let loader = async {
+                        canonical_oids
+                            .load(&mut *shard.primary_or_replica(&Default::default()).await?)
+                            .await
+                    };
+                    let result = select! {
+                        _ = shutdown.cancelled() => break,
+                        result = loader => { result },
+                    };
+
+                    match result {
+                        Ok(_) => return,
+                        Err(err) => {
+                            if shard.online() {
+                                error!("error loading canonical type information: {err}");
+                                sleep(Duration::from_millis(100)).await;
+                            } else {
+                                // Cluster is shutting down
+                                return;
+                            }
+                        }
+                    }
+                }
+            });
         }
 
         for shard in self.shards() {

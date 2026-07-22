@@ -22,9 +22,11 @@ use crate::net::messages::FrontendPid;
 use super::{Error, Guard, LoadBalancer, Pool, PoolConfig, Request};
 
 pub mod monitor;
+mod oids;
 pub mod role_detector;
 
 use monitor::*;
+pub(crate) use oids::{CanonicalOids, Oids};
 use role_detector::*;
 
 #[cfg_attr(test, derive(Default))]
@@ -47,13 +49,15 @@ pub(super) struct ShardConfig<'a> {
     pub(super) pub_sub_enabled: bool,
     /// Global schema cache.
     pub(super) schema_cache: SchemaCache,
+    /// The canonical mapping of type names to OID
+    pub(super) canonical_oids: Arc<CanonicalOids>,
 }
 
 /// Connection pools for a single database shard.
 ///
 /// Includes a primary and replicas.
 #[derive(Clone, Debug)]
-pub struct Shard {
+pub(crate) struct Shard {
     inner: Arc<ShardInner>,
 }
 
@@ -157,6 +161,14 @@ impl Shard {
             server.addr()
         );
 
+        let oids = self.oids.load(&mut server).await?;
+        info!(
+            "loaded type info for {} types on shard {} [{}]",
+            oids.len(),
+            self.number(),
+            server.addr()
+        );
+
         Ok(schema)
     }
 
@@ -170,6 +182,7 @@ impl Shard {
     /// If the schema is loaded already, this returns immediately.
     pub(super) async fn wait_schema_loaded(&self) {
         self.schema.wait().await;
+        self.oids.wait().await;
     }
 
     /// Check that the shard LB targets are all launched.
@@ -319,8 +332,9 @@ impl Deref for Shard {
 
 /// Shard connection pools
 /// and internal state.
-#[derive(Default, Debug)]
-pub struct ShardInner {
+#[cfg_attr(test, derive(Default))]
+#[derive(Debug)]
+pub(crate) struct ShardInner {
     number: usize,
     lb: LoadBalancer,
     comms: Arc<ShardComms>,
@@ -329,6 +343,7 @@ pub struct ShardInner {
     schema: SetOnce<Schema>,
     pub_sub_enabled: bool,
     schema_cache: SchemaCache,
+    oids: Arc<Oids>,
 }
 
 impl ShardInner {
@@ -343,9 +358,11 @@ impl ShardInner {
             lsn_check_interval,
             pub_sub_enabled,
             schema_cache,
+            canonical_oids,
         } = shard;
-        let primary = primary.map(Pool::new);
-        let lb = LoadBalancer::new(&primary, replicas, lb_strategy, rw_split);
+        let oids = Arc::new(Oids::new(canonical_oids));
+        let primary = primary.map(|config| Pool::new(config, Arc::clone(&oids)));
+        let lb = LoadBalancer::new(&primary, replicas, lb_strategy, rw_split, Arc::clone(&oids));
         let comms = Arc::new(ShardComms {
             shutdown: CancellationToken::new(),
             lsn_check_interval,
@@ -360,6 +377,7 @@ impl ShardInner {
             schema: SetOnce::new(),
             pub_sub_enabled,
             schema_cache,
+            oids,
         }
     }
 }

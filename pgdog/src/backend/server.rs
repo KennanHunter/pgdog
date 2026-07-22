@@ -1,6 +1,6 @@
 //! PostgreSQL server connection.
 
-use std::{ops::Deref, time::Duration};
+use std::{ops::Deref, sync::Arc, time::Duration};
 
 use bytes::{BufMut, BytesMut};
 use rustls_pki_types::ServerName;
@@ -13,7 +13,7 @@ use tokio::{
 use tracing::{debug, error, info, trace, warn};
 
 use super::{
-    ConnectReason, DisconnectReason, Error, PreparedStatements, ServerOptions, Stats,
+    ConnectReason, DisconnectReason, Error, Oids, PreparedStatements, ServerOptions, Stats,
     pool::Address, prepared_statements::HandleResult,
 };
 use crate::{
@@ -96,10 +96,11 @@ impl MemoryUsage for Server {
 
 impl Server {
     /// Create new PostgreSQL server connection.
-    pub async fn connect(
+    pub(crate) async fn connect(
         addr: &Address,
         options: ServerOptions,
         connect_reason: ConnectReason,
+        oids: Arc<Oids>,
     ) -> Result<Self, Error> {
         let (user, auth_secrets) = addr.auth_credentials().await?;
         let total = auth_secrets.len();
@@ -110,6 +111,7 @@ impl Server {
                 options.clone(),
                 connect_reason,
                 &auth_secret,
+                Arc::clone(&oids),
             )
             .await
             {
@@ -151,6 +153,7 @@ impl Server {
         options: ServerOptions,
         connect_reason: ConnectReason,
         auth_secret: &super::pool::Password,
+        oids: Arc<Oids>,
     ) -> Result<Self, Error> {
         debug!("=> {}", addr);
         let stream = TcpStream::connect(addr.addr().await?).await?;
@@ -341,7 +344,7 @@ impl Server {
             params,
             changed_params: Parameters::default(),
             client_params: Parameters::default(),
-            prepared_statements: PreparedStatements::new(),
+            prepared_statements: PreparedStatements::new(oids),
             dirty: false,
             streaming: false,
             schema_changed: false,
@@ -1247,7 +1250,7 @@ pub mod test {
                     &ServerOptions::default(),
                     &Memory::default(),
                 ),
-                prepared_statements: super::PreparedStatements::new(),
+                prepared_statements: super::PreparedStatements::default(),
                 addr,
                 dirty: false,
                 streaming: false,
@@ -1277,11 +1280,12 @@ pub mod test {
         }
     }
 
-    pub async fn test_server() -> Server {
+    pub(crate) async fn test_server() -> Server {
         Server::connect(
             &Address::new_test(),
             ServerOptions::default(),
             ConnectReason::Other,
+            Default::default(),
         )
         .await
         .unwrap()
@@ -1298,6 +1302,7 @@ pub mod test {
             },
             ServerOptions::default(),
             ConnectReason::Other,
+            Default::default(),
         )
         .await
         .unwrap()
@@ -1308,6 +1313,7 @@ pub mod test {
             &Address::new_test(),
             ServerOptions::new_replication(),
             ConnectReason::Replication,
+            Default::default(),
         )
         .await
         .unwrap()
@@ -1366,7 +1372,13 @@ pub mod test {
             expected_secret,
             SystemTime::now() + Duration::from_secs(3600),
         );
-        let result = Server::connect(&addr, ServerOptions::default(), ConnectReason::Other).await;
+        let result = Server::connect(
+            &addr,
+            ServerOptions::default(),
+            ConnectReason::Other,
+            Default::default(),
+        )
+        .await;
         TokenCache::global().evict(&addr);
 
         let server = result.unwrap();
@@ -1426,7 +1438,13 @@ pub mod test {
             expected_secret,
             SystemTime::now() + Duration::from_secs(3600),
         );
-        let result = Server::connect(&addr, ServerOptions::default(), ConnectReason::Other).await;
+        let result = Server::connect(
+            &addr,
+            ServerOptions::default(),
+            ConnectReason::Other,
+            Default::default(),
+        )
+        .await;
         TokenCache::global().evict(&addr);
 
         let server = result.unwrap();

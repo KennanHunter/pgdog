@@ -451,10 +451,13 @@ mod test {
             },
         };
 
-        let pool = Pool::new(&PoolConfig {
-            address: Address::new_test(),
-            config,
-        });
+        let pool = Pool::new(
+            &PoolConfig {
+                address: Address::new_test(),
+                config,
+            },
+            Default::default(),
+        );
         pool.launch();
 
         // Saturate the pool by holding its only connection.
