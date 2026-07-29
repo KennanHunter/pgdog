@@ -384,7 +384,7 @@ impl Server {
         self.stats.state(State::Active);
 
         for message in client_request.messages.iter() {
-            self.send_one(message).await?;
+            self.send_one(dbg!(message)).await?;
         }
         self.flush().await?;
 
@@ -480,8 +480,8 @@ impl Server {
                 Ok(message) => {
                     // INVARIANT: omni dedup in multi_shard relies on this being process-unique;
                     // never substitute a non-unique value here.
-                    let message = message.stream(self.streaming).backend(self.id);
-                    match self.prepared_statements.forward(&message) {
+                    let mut message = message.stream(self.streaming).backend(self.id);
+                    match self.prepared_statements.forward(&mut message) {
                         Ok(forward) => {
                             if forward {
                                 break message;
@@ -1176,6 +1176,11 @@ impl Server {
                     .unwrap_or_default(),
             },
         }
+    }
+
+    pub(crate) fn replace_oids(&mut self, oids: &Arc<Oids>) {
+        self.prepared_statements.replace_oids(oids);
+        self.schema_changed = true;
     }
 }
 

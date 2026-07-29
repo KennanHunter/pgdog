@@ -36,7 +36,7 @@ async fn test_oid_drift() {
         a: String::from("a"),
         b: String::from("b"),
     };
-    for i in 1..=11 {
+    for i in 1..=20 {
         sqlx::query("INSERT INTO test_oid_drift VALUES ($1, $2)")
             .bind(i)
             .bind(&composite)
@@ -49,5 +49,5 @@ async fn test_oid_drift() {
         .fetch_all(&conn)
         .await
         .unwrap();
-    assert_eq!(rows, vec![composite; 11]);
+    assert_eq!(rows, vec![composite; 20]);
 }

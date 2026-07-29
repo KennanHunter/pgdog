@@ -16,7 +16,7 @@ impl<T> SetOnceCell<T> {
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<T, E>>,
     {
-        if let Some(val) = self.value.get() {
+        if let Some(val) = self.get() {
             Ok(val)
         } else {
             // Ensure only a single writer attempts to write.
@@ -25,13 +25,18 @@ impl<T> SetOnceCell<T> {
                 self.set_value(f().await?, permit);
             }
 
-            Ok(self.value.get().expect("always initialized"))
+            Ok(self.get().expect("always initialized"))
         }
     }
 
     /// Equivalent to [`SetOnce::wait`]
     pub(crate) async fn wait(&self) -> &T {
         self.value.wait().await
+    }
+
+    /// Equivalent to [`SetOnce::get`]
+    pub(crate) fn get(&self) -> Option<&T> {
+        self.value.get()
     }
 
     /// Equivalent to [`tokio::sync::OnceCell::set`]
@@ -53,7 +58,9 @@ impl<T> SetOnceCell<T> {
 
     /// Set the value and close the semaphore
     fn set_value(&self, value: T, permit: SemaphorePermit) {
-        let _ = self.value.set(value);
+        let Ok(_) = self.value.set(value) else {
+            panic!("set_value called when already initialized");
+        };
         self.semaphore.close();
         permit.forget();
     }

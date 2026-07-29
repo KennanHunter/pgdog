@@ -8,6 +8,7 @@ use tokio::{spawn, time::Instant};
 use tracing::{debug, error};
 
 use crate::backend::{Error, Server};
+use crate::frontend::PreparedStatements;
 use crate::state::State;
 
 use super::{Pool, cleanup::Cleanup};
@@ -171,6 +172,7 @@ impl Guard {
 
         if schema_changed {
             server.reset_schema_changed();
+            PreparedStatements
         }
 
         if cleanup.is_reset_params() {

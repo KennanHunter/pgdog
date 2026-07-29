@@ -26,7 +26,7 @@ mod oids;
 pub mod role_detector;
 
 use monitor::*;
-pub(crate) use oids::{CanonicalOids, Oids};
+pub(crate) use oids::{CanonicalOids, OidMappings, Oids};
 use role_detector::*;
 
 #[cfg_attr(test, derive(Default))]
@@ -49,8 +49,6 @@ pub(super) struct ShardConfig<'a> {
     pub(super) pub_sub_enabled: bool,
     /// Global schema cache.
     pub(super) schema_cache: SchemaCache,
-    /// The canonical mapping of type names to OID
-    pub(super) canonical_oids: Arc<CanonicalOids>,
 }
 
 /// Connection pools for a single database shard.
@@ -138,6 +136,7 @@ impl Shard {
             return Ok(false);
         }
 
+        self.load_oids().await?;
         // This is syncrhonized by database/shard number, so this prevents
         // a thundering herd with 100s of users, for example, all fetching
         // the same schema.
@@ -161,21 +160,19 @@ impl Shard {
             server.addr()
         );
 
-        let oids = self.oids.load(&mut server).await?;
-        info!(
-            "loaded type info for {} types on shard {} [{}]",
-            oids.len(),
-            self.number(),
-            server.addr()
-        );
-
         Ok(schema)
+    }
+
+    async fn load_oids(&self) -> Result<(), crate::backend::Error> {
+        self.oids.load(self).await?;
+        Ok(())
     }
 
     /// Set the schema to its default value.
     /// We don't need it for this shard.
     pub(super) fn schema_not_needed(&self) {
         let _ = self.schema.set(Schema::default());
+        self.oids.skip_load();
     }
 
     /// Wait for the shard to load the schema.
@@ -358,9 +355,8 @@ impl ShardInner {
             lsn_check_interval,
             pub_sub_enabled,
             schema_cache,
-            canonical_oids,
         } = shard;
-        let oids = Arc::new(Oids::new(canonical_oids));
+        let oids = schema_cache.oids(&identifier.database, number);
         let primary = primary.map(|config| Pool::new(config, Arc::clone(&oids)));
         let lb = LoadBalancer::new(&primary, replicas, lb_strategy, rw_split, Arc::clone(&oids));
         let comms = Arc::new(ShardComms {

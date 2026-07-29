@@ -96,7 +96,7 @@ impl QueryEngine {
                     && !self.backend.in_copy_mode()
                     && !self.streaming
                 {
-                    let message = self.read_server_message().await?;
+                    let message = dbg!(self.read_server_message().await?);
                     self.process_server_message(context, message).await?;
                 }
             }

@@ -120,7 +120,6 @@ impl Cluster {
     /// until success or shutdown.
     fn launch_schema_sync(&self) {
         if !self.load_schema() {
-            self.canonical_oids.skip_load();
             for shard in self.shards() {
                 shard.schema_not_needed();
             }

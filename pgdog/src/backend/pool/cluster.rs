@@ -290,7 +290,7 @@ impl Cluster {
             user: user.to_owned(),
             database: name.to_owned(),
         });
-        let canonical_oids = Default::default();
+        let canonical_oids = schema_cache.canonical_oids(name);
 
         Self {
             identifier: identifier.clone(),
@@ -308,7 +308,6 @@ impl Cluster {
                         lsn_check_interval,
                         pub_sub_enabled,
                         schema_cache: schema_cache.clone(),
-                        canonical_oids: Arc::clone(&canonical_oids),
                     })
                 })
                 .collect(),
