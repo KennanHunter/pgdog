@@ -1,3 +1,4 @@
+#![cfg(feature = "new_parser")]
 use crate::setup::{admin_sqlx, connections_sqlx};
 use sqlx::Executor;
 
