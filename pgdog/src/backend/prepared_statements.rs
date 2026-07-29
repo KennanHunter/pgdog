@@ -292,10 +292,7 @@ impl PreparedStatements {
 
             'T' => {
                 if let Some(describe) = self.describes.pop_front() {
-                    self.add_row_description(
-                        &describe,
-                        RowDescription::from_bytes(message.to_bytes())?,
-                    );
+                    self.add_row_description(&describe, message)?;
                 };
             }
 
@@ -402,12 +399,14 @@ impl PreparedStatements {
 
     /// Handle a Describe message, storing the RowDescription for the
     /// statement in the global cache.
-    fn add_row_description(&self, name: &str, mut row_description: RowDescription) {
-        dbg!(self.parse(name).unwrap().query());
+    fn add_row_description(&self, name: &str, message: &mut Message) -> Result<(), Error> {
+        let mut row_description = RowDescription::from_bytes(message.payload())?;
         self.rewrite_row_description_data_types(&mut row_description);
+        message.replace_payload(row_description.to_bytes());
         self.global_cache
             .write()
             .insert_row_description(name, row_description);
+        Ok(())
     }
 
     /// Remove statement from local cache.
@@ -479,7 +478,7 @@ impl PreparedStatements {
     }
 
     fn rewrite_row_description_data_types(&self, row_description: &mut RowDescription) {
-        row_description.rewrite_data_types(dbg!(&self.oid_mappings().shard_to_canonical));
+        row_description.rewrite_data_types(&self.oid_mappings().shard_to_canonical);
     }
 
     fn rewrite_parameter_description_data_types(&self, message: &mut Message) -> Result<(), Error> {

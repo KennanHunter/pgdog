@@ -384,7 +384,7 @@ impl Server {
         self.stats.state(State::Active);
 
         for message in client_request.messages.iter() {
-            self.send_one(dbg!(message)).await?;
+            self.send_one(message).await?;
         }
         self.flush().await?;
 
