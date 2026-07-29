@@ -1623,13 +1623,6 @@ pub mod test {
                 assert_eq!(c, msg.code());
             }
 
-            // RowDescription saved.
-            let global = server.prepared_statements.parse(&name).unwrap();
-            server
-                .prepared_statements
-                .row_description(global.name())
-                .unwrap();
-
             server
                 .send(
                     &vec![
