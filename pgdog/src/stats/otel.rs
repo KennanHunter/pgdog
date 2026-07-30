@@ -31,7 +31,7 @@ struct CounterKey {
 static PREV_COUNTERS: Lazy<Mutex<HashMap<CounterKey, f64>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-fn now_nanos() -> String {
+pub fn now_nanos() -> String {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -203,8 +203,13 @@ fn measurement_to_f64(m: &MeasurementType) -> f64 {
 }
 
 /// Build an `ExportMetricsServiceRequest` from a collection of `Metric` objects.
-pub fn build_request(metrics: &[&Metric]) -> ExportMetricsServiceRequest {
-    let now = now_nanos();
+///
+/// `now` is the sample timestamp (nanos since epoch as a decimal string) to stamp
+/// on every data point. Callers building multiple batches in the same push cycle
+/// should pass the same `now` to all batches so Prometheus's OTLP receiver treats
+/// the resulting `target_info` writes as idempotent duplicates rather than
+/// out-of-order samples for that series.
+pub fn build_request(metrics: &[&Metric], now: &str) -> ExportMetricsServiceRequest {
     let config = crate::config::config();
     let namespace = config
         .config
@@ -271,7 +276,7 @@ pub fn build_request(metrics: &[&Metric]) -> ExportMetricsServiceRequest {
 
                     Some(NumberDataPoint {
                         start_time_unix_nano: None,
-                        time_unix_nano: now.clone(),
+                        time_unix_nano: now.to_owned(),
                         as_double,
                         attributes,
                     })
@@ -340,7 +345,7 @@ mod test {
             metric_type: None,
         });
 
-        let request = build_request(&[&metric]);
+        let request = build_request(&[&metric], &now_nanos());
         let json = serde_json::to_string_pretty(&request).expect("serialize");
 
         assert!(json.contains("\"gauge\""));
@@ -365,7 +370,7 @@ mod test {
             metric_type: Some("counter".into()),
         });
 
-        let request = build_request(&[&metric]);
+        let request = build_request(&[&metric], &now_nanos());
         let json = serde_json::to_string(&request).expect("serialize");
 
         assert!(json.contains("\"sum\""));
@@ -396,7 +401,7 @@ mod test {
             metric_type: None,
         });
 
-        let request = build_request(&[&metric]);
+        let request = build_request(&[&metric], &now_nanos());
         let scope = &request.resource_metrics[0].scope_metrics[0].scope;
         assert_eq!(scope.name, "pgdog");
 
@@ -428,7 +433,7 @@ mod test {
             metric_type: None,
         });
 
-        let request = build_request(&[&metric]);
+        let request = build_request(&[&metric], &now_nanos());
         let scope = &request.resource_metrics[0].scope_metrics[0];
         let otel_metric = &scope.metrics[0];
 
@@ -458,7 +463,7 @@ mod test {
             metric_type: Some("counter".into()),
         });
 
-        let request = build_request(&[&metric]);
+        let request = build_request(&[&metric], &now_nanos());
         let sum = &request.resource_metrics[0].scope_metrics[0].metrics[0]
             .sum
             .as_ref()
@@ -481,12 +486,58 @@ mod test {
             metric_type: None,
         });
 
-        let request = build_request(&[&metric]);
+        let request = build_request(&[&metric], &now_nanos());
         let gauge = &request.resource_metrics[0].scope_metrics[0].metrics[0]
             .gauge
             .as_ref()
             .expect("gauge");
         assert!((gauge.data_points[0].as_double - 1.234).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn shared_now_produces_identical_timestamps_across_batches() {
+        let _test_lock = TEST_LOCK.lock();
+
+        let metric_a = Metric::new(PoolMetric {
+            name: "sv_idle".into(),
+            measurements: vec![Measurement {
+                labels: vec![],
+                measurement: MeasurementType::Integer(1),
+            }],
+            help: "a".into(),
+            unit: None,
+            metric_type: None,
+        });
+        let metric_b = Metric::new(PoolMetric {
+            name: "sv_active".into(),
+            measurements: vec![Measurement {
+                labels: vec![],
+                measurement: MeasurementType::Integer(2),
+            }],
+            help: "b".into(),
+            unit: None,
+            metric_type: None,
+        });
+
+        let now = "1000000000".to_string();
+        let batch_a = build_request(&[&metric_a], &now);
+        let batch_b = build_request(&[&metric_b], &now);
+
+        let ts_a = &batch_a.resource_metrics[0].scope_metrics[0].metrics[0]
+            .gauge
+            .as_ref()
+            .expect("gauge")
+            .data_points[0]
+            .time_unix_nano;
+        let ts_b = &batch_b.resource_metrics[0].scope_metrics[0].metrics[0]
+            .gauge
+            .as_ref()
+            .expect("gauge")
+            .data_points[0]
+            .time_unix_nano;
+
+        assert_eq!(ts_a, &now);
+        assert_eq!(ts_b, &now);
     }
 
     #[test]
@@ -505,7 +556,7 @@ mod test {
             metric_type: None,
         });
 
-        let request = build_request(&[&metric]);
+        let request = build_request(&[&metric], &now_nanos());
         let resource = &request.resource_metrics[0].resource;
 
         let svc = resource

@@ -1,11 +1,13 @@
 services:
   pgdog:
     image: ghcr.io/pgdogdev/pgdog:main
+    build: .
     volumes:
       - ./docker/pgdog.toml:/pgdog/pgdog.toml
       - ./docker/users.toml:/pgdog/users.toml
     ports:
       - 6432:6432
+      - 9090:9090
     networks:
       - postgres
     environment:

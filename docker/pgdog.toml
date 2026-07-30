@@ -1,3 +1,6 @@
+[general]
+query_parser = "auto"
+
 [[databases]]
 name = "postgres"
 host = "shard_0"
