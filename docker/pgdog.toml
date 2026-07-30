@@ -1,3 +1,6 @@
+[general]
+openmetrics_port = 9090
+
 [[databases]]
 name = "postgres"
 host = "shard_0"
