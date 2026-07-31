@@ -1518,7 +1518,7 @@
       "additionalProperties": false
     },
     "OtelTemporalityPreference": {
-      "description": "Aggregation temporality used when exporting OTLP metric points.\n\n<https://docs.pgdog.dev/configuration/pgdog.toml/otel/#temporality_preference>",
+      "description": "Aggregation temporality used when exporting OTLP metric points.",
       "oneOf": [
         {
           "description": "Points report the value accumulated since the exporter started.",
